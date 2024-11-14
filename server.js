@@ -15,7 +15,7 @@ app.use(fileUpload({
     // useTempFiles: true
   }));
 
-app.use(router)
+app.use("/api", router)
   
 app.use(cors());
 
