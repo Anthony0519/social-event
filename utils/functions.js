@@ -206,13 +206,41 @@ const extractFileMetadata = async (file, config = DEFAULT_VALIDATION_CONFIG) => 
           'DateTime'
         ];
 
+        let foundCreationTime = false;
         for (const field of dateFields) {
           if (tags[field] && tags[field].description) {
             const parsedDate = new Date(tags[field].description);
             if (!isNaN(parsedDate.getTime())) {
               metadata.createdAt = parsedDate;
               metadata.possibleCreationSources.push('EXIF');
+              foundCreationTime = true;
               break;
+            }
+          }
+        }
+
+        // If no EXIF creation time but we found camera/snapchat markers
+        if (!foundCreationTime && metadata.isOriginalPhoto) {
+          // If the file has a last modified date, use it
+          if (file.lastModifiedDate) {
+            metadata.createdAt = new Date(file.lastModifiedDate);
+            metadata.possibleCreationSources.push('lastModifiedDate');
+          } else {
+            // For fresh photos, use current time
+            const now = new Date();
+            metadata.createdAt = now;
+            metadata.possibleCreationSources.push('current');
+            
+            // Add a warning instead of an error for recent photos
+            const fiveMinutesAgo = new Date(now.getTime() - 5 * 60000); // 5 minutes buffer
+            if (file.lastModifiedDate && new Date(file.lastModifiedDate) > fiveMinutesAgo) {
+              metadata.validationWarnings.push(
+                'Using current time as photo creation time since no EXIF data was found'
+              );
+            } else {
+              metadata.validationWarnings.push(
+                'Could not verify exact photo creation time, but proceeding since photo source is valid'
+              );
             }
           }
         }
@@ -223,25 +251,22 @@ const extractFileMetadata = async (file, config = DEFAULT_VALIDATION_CONFIG) => 
         if (tags.ISO) metadata.iso = tags.ISO.description;
 
       } catch (e) {
-        metadata.validationErrors.push(
-          'Unable to verify image source. Please ensure you are uploading an original photo from Snapchat or phone camera.'
-        );
+        // If we can't read EXIF but file is recent, allow it
+        const now = new Date();
+        const fiveMinutesAgo = new Date(now.getTime() - 5 * 60000); // 5 minutes buffer
+
+        if (file.lastModifiedDate && new Date(file.lastModifiedDate) > fiveMinutesAgo) {
+          metadata.createdAt = new Date(file.lastModifiedDate);
+          metadata.possibleCreationSources.push('lastModifiedDate');
+          metadata.validationWarnings.push(
+            'No EXIF data found, but allowing upload since photo appears to be recent'
+          );
+        } else {
+          metadata.validationErrors.push(
+            'Unable to verify image source. Please ensure you are uploading a photo directly from your phone camera or Snapchat'
+          );
+        }
       }
-    }
-
-    // Try file system dates if EXIF not available
-    if (!metadata.createdAt && file.lastModifiedDate) {
-      metadata.createdAt = new Date(file.lastModifiedDate);
-      metadata.possibleCreationSources.push('lastModifiedDate');
-    }
-
-    // Last resort: use current time
-    if (!metadata.createdAt) {
-      metadata.createdAt = new Date();
-      metadata.possibleCreationSources.push('current');
-      metadata.validationErrors.push(
-        'Could not verify original photo creation time. Please upload original photos directly from your phone camera or snapchat.'
-      );
     }
 
     // If the image was compressed, add a warning
