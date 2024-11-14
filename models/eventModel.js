@@ -38,10 +38,6 @@ const EventSchema = new mongoose.Schema({
     type: String,
     unique: true
   },
-  // uploads: [{
-  //   type: mongoose.Schema.Types.ObjectId,
-  //   ref: 'Upload'
-  // }]
 }, { 
   timestamps: true 
 })
