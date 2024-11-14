@@ -8,7 +8,7 @@ const DEFAULT_VALIDATION_CONFIG = {
   minImageWidth: 800,
   minImageHeight: 600,
   timeBufferMinutes: 60,
-  allowedMimeTypes: ['image/jpeg', 'image/png', "IMG_", 'image/heic', 'image/heif'],
+  allowedMimeTypes: ['image/jpeg', 'image/png', "image/jpg", 'image/heic', 'image/heif'],
   requireOriginalPhoto: false, // If true, only accepts photos with valid EXIF data
   minQualityScore: 0.5 // 0-1 scale for image quality assessment
 };
