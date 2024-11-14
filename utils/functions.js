@@ -9,8 +9,15 @@ const DEFAULT_VALIDATION_CONFIG = {
   minImageHeight: 600,
   timeBufferMinutes: 60,
   allowedMimeTypes: ['image/jpeg', 'image/png', "image/jpg", 'image/heic', 'image/heif'],
+  allowedExtensions: ['.jpeg', '.jpg', '.png', '.heic', '.heif'], 
   requireOriginalPhoto: false, // If true, only accepts photos with valid EXIF data
   minQualityScore: 0.5 // 0-1 scale for image quality assessment
+};
+
+// Helper function to check if file extension is allowed
+const isAllowedExtension = (fileName, allowedExtensions) => {
+  const fileExtension = fileName.slice(((fileName.lastIndexOf(".") - 1) >>> 0) + 2).toLowerCase();
+  return allowedExtensions.includes(`.${fileExtension}`);
 };
 
 const extractFileMetadata = async (file, config = DEFAULT_VALIDATION_CONFIG) => {
@@ -43,11 +50,21 @@ const extractFileMetadata = async (file, config = DEFAULT_VALIDATION_CONFIG) => 
       );
     }
 
-    //  Check MIME type
-    if (!config.allowedMimeTypes.includes(metadata.mimetype)) {
+    // Check MIME type and extension for application/octet-stream
+    if (
+      metadata.mimetype === 'application/octet-stream' &&
+      !isAllowedExtension(file.name, config.allowedExtensions)
+    ) {
       metadata.validationErrors.push(
         `File type ${metadata.mimetype} is not allowed. Allowed types: ${config.allowedMimeTypes.join(', ')}`
       );
+    } else if (
+      metadata.mimetype !== 'application/octet-stream' &&
+      !config.allowedMimeTypes.includes(metadata.mimetype)
+    ) {
+      metadata.validationErrors.push(
+        `File type ${metadata.mimetype} is not allowed. Allowed types: ${config.allowedMimeTypes.join(', ')}`
+      )
     }
 
     // Get image dimensions
@@ -142,12 +159,23 @@ const validateFileCreationTime = (fileMetadata, eventStart, eventEnd, config = D
 
   // Calculate how far outside the event time the photo was taken (if invalid)
   let timeOffset = null;
+  let timeOffsetMessage = '';
+
   if (!isValid) {
-    if (createdAt < bufferedEventStart) {
-      timeOffset = Math.floor((bufferedEventStart - createdAt) / (1000 * 60)); // minutes
-    } else {
-      timeOffset = Math.floor((createdAt - bufferedEventEnd) / (1000 * 60)); // minutes
-    }
+    const offsetInMinutes = createdAt < bufferedEventStart 
+      ? Math.floor((bufferedEventStart - createdAt) / (1000 * 60)) // minutes before
+      : Math.floor((createdAt - bufferedEventEnd) / (1000 * 60)); // minutes after
+    
+    // Calculate days, hours, and minutes
+    const days = Math.floor(offsetInMinutes / (24 * 60));
+    const hours = Math.floor((offsetInMinutes % (24 * 60)) / 60);
+    const minutes = offsetInMinutes % 60;
+
+    // Construct a human-readable message for the time offset
+    timeOffsetMessage = `File was created ${days > 0 ? days + ' day(s) ' : ''}${hours > 0 ? hours + ' hour(s) ' : ''}${minutes} minute(s) ${createdAt < bufferedEventStart ? 'before' : 'after'} the allowed time window`;
+
+    // Set the timeOffset object
+    timeOffset = { days, hours, minutes };
   }
 
   return {
@@ -161,7 +189,7 @@ const validateFileCreationTime = (fileMetadata, eventStart, eventEnd, config = D
       timeOffset,
       message: isValid 
         ? `File creation time is valid (detected via ${creationSource})`
-        : `File was created ${timeOffset} minutes ${createdAt < bufferedEventStart ? 'before' : 'after'} the allowed time window`
+        : timeOffsetMessage
     }
   };
 };

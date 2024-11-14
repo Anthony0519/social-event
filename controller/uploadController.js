@@ -66,3 +66,26 @@ exports.getAllUploads = async(req,res)=>{
         })
     }
 }
+
+exports.deleteImage = async (req, res) => {
+    try {
+      const {id} = req.params
+  
+      // Find the image document in MongoDB by its ID
+      const image = await uploadModel.findById(id);
+  
+      if (!image) {
+        return res.status(404).json({ message: "Image not found" });
+      }
+  
+      // Delete the image from Cloudinary
+      await cloudinary.uploader.destroy(image.image_id);
+  
+      // Delete the image document from MongoDB
+      await uploadModel.findByIdAndDelete(id);
+  
+      res.status(200).json({ message: "Image deleted successfully" });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  };

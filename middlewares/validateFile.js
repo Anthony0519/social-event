@@ -68,7 +68,7 @@ const validateFileUpload = async (req, res, next) => {
         // Upload to Cloudinary if all validations pass
         const tempFilePath = `/tmp/${file.name}`;
         await file.mv(tempFilePath);
-        const result = await cloudinary.uploader.upload(tempFilePath);
+        const result = await cloudinary.uploader.upload(tempFilePath, { folder: event.folderName });
         fs.unlinkSync(tempFilePath);
 
         uploadedFiles.push({
@@ -105,7 +105,7 @@ const validateFileUpload = async (req, res, next) => {
     } else {
       res.status(400).json({
         message: 'No files were successfully validated',
-        failedFiles
+        error: failedFiles[0].errors[0]
       });
     }
   } catch (error) {
