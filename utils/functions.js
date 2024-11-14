@@ -1,95 +1,16 @@
 const ExifReader = require('exifreader');
 const fs = require('fs');
 const sizeOf = require('image-size');
-const sharp = require('sharp'); // Make sure to install: npm install sharp
 
+// Configuration object for validation rules
 const DEFAULT_VALIDATION_CONFIG = {
   maxFileSizeInMB: 10,
   minImageWidth: 800,
   minImageHeight: 600,
   timeBufferMinutes: 60,
   allowedMimeTypes: ['image/jpeg', 'image/png', 'image/heic', 'image/heif'],
-  requireOriginalPhoto: true,
-  minQualityScore: 0.5,
-  // Compression settings
-  targetFileSizeMB: 5, // Target file size after compression
-  maxCompressionAttempts: 5, // Maximum number of compression attempts
-  initialQuality: 90, // Initial compression quality
-  minimumQuality: 60, // Minimum acceptable quality
-  // Source validation config
-  allowedSources: ['phone_camera', 'snapchat'],
-  knownCameraSoftware: [
-    'snapchat',
-    'camera',
-    'iphone',
-    'samsung camera',
-    'google camera',
-    'huawei camera',
-    'oneplus camera',
-    'xiaomi camera',
-    'oppo camera',
-    'vivo camera'
-  ]
-};
-
-const compressImage = async (imageBuffer, targetSizeMB, config = DEFAULT_VALIDATION_CONFIG) => {
-  const targetSizeBytes = targetSizeMB * 1024 * 1024;
-  let quality = config.initialQuality;
-  let compressedBuffer = imageBuffer;
-  let attempt = 0;
-  let metadata = null;
-
-  try {
-    // Get initial image metadata
-    metadata = await sharp(imageBuffer).metadata();
-    
-    // If image is already smaller than target size, return original
-    if (imageBuffer.length <= targetSizeBytes) {
-      return {
-        buffer: imageBuffer,
-        metadata: {
-          format: metadata.format,
-          width: metadata.width,
-          height: metadata.height,
-          size: imageBuffer.length,
-          quality: 100
-        }
-      };
-    }
-
-    while (attempt < config.maxCompressionAttempts && quality >= config.minimumQuality) {
-      // Compress the image
-      compressedBuffer = await sharp(imageBuffer)
-        .jpeg({ quality: quality })
-        .toBuffer();
-
-      // If we've reached target size or can't compress further
-      if (compressedBuffer.length <= targetSizeBytes || quality <= config.minimumQuality) {
-        break;
-      }
-
-      // Adjust quality based on how far we are from target size
-      const ratio = targetSizeBytes / compressedBuffer.length;
-      quality = Math.max(Math.floor(quality * ratio), config.minimumQuality);
-      attempt++;
-    }
-
-    // Get final metadata
-    const finalMetadata = await sharp(compressedBuffer).metadata();
-
-    return {
-      buffer: compressedBuffer,
-      metadata: {
-        format: finalMetadata.format,
-        width: finalMetadata.width,
-        height: finalMetadata.height,
-        size: compressedBuffer.length,
-        quality: quality
-      }
-    };
-  } catch (error) {
-    throw new Error(`Image compression failed: ${error.message}`);
-  }
+  requireOriginalPhoto: false, // If true, only accepts photos with valid EXIF data
+  minQualityScore: 0.5 // 0-1 scale for image quality assessment
 };
 
 const extractFileMetadata = async (file, config = DEFAULT_VALIDATION_CONFIG) => {
@@ -101,104 +22,54 @@ const extractFileMetadata = async (file, config = DEFAULT_VALIDATION_CONFIG) => 
     throw new Error('Invalid file object - missing required properties');
   }
 
-  let fileData = file.data;
-  let originalSize = file.size;
-  let wasCompressed = false;
-
-  // Check if file needs compression
-  if (file.size > config.maxFileSizeInMB * 1024 * 1024) {
-    try {
-      const compressionResult = await compressImage(file.data, config.targetFileSizeMB, config);
-      fileData = compressionResult.buffer;
-      wasCompressed = true;
-      
-      // Update the file object with compressed data
-      file.data = fileData;
-      file.size = fileData.length;
-    } catch (error) {
-      console.warn('Image compression failed:', error);
-      // Continue with original file if compression fails
-    }
-  }
-
   const metadata = {
     originalName: file.name,
     mimetype: file.mimetype,
     size: file.size,
     sizeInMB: file.size / (1024 * 1024),
-    originalSize,
-    originalSizeInMB: originalSize / (1024 * 1024),
-    wasCompressed,
-    compressionRatio: wasCompressed ? (file.size / originalSize).toFixed(2) : 1,
     dimensions: null,
     qualityScore: null,
     possibleCreationSources: [],
     createdAt: null,
     validationErrors: [],
-    validationWarnings: [],
-    sourceApplication: null,
-    isOriginalPhoto: false
+    validationWarnings: []
   };
 
   try {
+    // Check file size
+    if (metadata.sizeInMB > config.maxFileSizeInMB) {
+      metadata.validationErrors.push(
+        `File size (${metadata.sizeInMB.toFixed(2)}MB) exceeds maximum allowed size of ${config.maxFileSizeInMB}MB`
+      );
+    }
+
+    //  Check MIME type
+    if (!config.allowedMimeTypes.includes(metadata.mimetype)) {
+      metadata.validationErrors.push(
+        `File type ${metadata.mimetype} is not allowed. Allowed types: ${config.allowedMimeTypes.join(', ')}`
+      );
+    }
+
+    // Get image dimensions
+    // if (file.mimetype.startsWith('image/')) {
+    //   try {
+    //     const dimensions = sizeOf(file.data);
+    //     metadata.dimensions = dimensions;
+
+    //     if (dimensions.width < config.minImageWidth || dimensions.height < config.minImageHeight) {
+    //       metadata.validationErrors.push(
+    //         `Image dimensions (${dimensions.width}x${dimensions.height}) are below minimum required (${config.minImageWidth}x${config.minImageHeight})`
+    //       );
+    //     }
+    //   } catch (e) {
+    //     metadata.validationWarnings.push('Could not determine image dimensions');
+    //   }
+    // }
+
     if (file.mimetype.startsWith('image/')) {
+      // Try EXIF data first
       try {
-        const tags = ExifReader.load(fileData);
-        
-        // Check for source application in EXIF data
-        const softwareTags = [
-          'Software',
-          'ApplicationRecordVersion',
-          'ApplicationName',
-          'CreatorTool'
-        ];
-
-        let sourceFound = false;
-        for (const tag of softwareTags) {
-          if (tags[tag] && tags[tag].description) {
-            const software = tags[tag].description.toLowerCase();
-            metadata.sourceApplication = software;
-
-            // Check if it's from Snapchat
-            if (software.includes('snapchat')) {
-              metadata.possibleCreationSources.push('snapchat');
-              sourceFound = true;
-              metadata.isOriginalPhoto = true;
-              break;
-            }
-
-            // Check if it's from a phone camera
-            for (const cameraApp of config.knownCameraSoftware) {
-              if (software.includes(cameraApp)) {
-                metadata.possibleCreationSources.push('phone_camera');
-                sourceFound = true;
-                metadata.isOriginalPhoto = true;
-                break;
-              }
-            }
-          }
-        }
-
-        // Additional checks for phone camera characteristics
-        if (!sourceFound) {
-          const hasGPS = tags.GPSLatitude || tags.GPSLongitude;
-          const hasCameraInfo = tags.Make || tags.Model;
-          const hasOriginalDate = tags.DateTimeOriginal;
-          
-          if (hasCameraInfo && hasOriginalDate) {
-            metadata.possibleCreationSources.push('phone_camera');
-            metadata.isOriginalPhoto = true;
-            sourceFound = true;
-          }
-        }
-
-        if (!sourceFound) {
-          metadata.validationErrors.push(
-            'Image must be taken directly from Snapchat or a phone camera. Screenshots, downloaded, or edited images are not allowed.'
-          );
-        }
-
-        // Extract creation time from EXIF data
+        const tags = ExifReader.load(file.data);
         const dateFields = [
           'DateTimeOriginal',
           'CreateDate',
@@ -206,74 +77,51 @@ const extractFileMetadata = async (file, config = DEFAULT_VALIDATION_CONFIG) => 
           'DateTime'
         ];
 
-        let foundCreationTime = false;
         for (const field of dateFields) {
           if (tags[field] && tags[field].description) {
             const parsedDate = new Date(tags[field].description);
             if (!isNaN(parsedDate.getTime())) {
               metadata.createdAt = parsedDate;
               metadata.possibleCreationSources.push('EXIF');
-              foundCreationTime = true;
+
+              // Calculate rough quality score based on EXIF data
+              if (tags.Quality) {
+                metadata.qualityScore = parseInt(tags.Quality.description) / 100;
+              }
               break;
             }
           }
         }
 
-        // If no EXIF creation time but we found camera/snapchat markers
-        if (!foundCreationTime && metadata.isOriginalPhoto) {
-          // If the file has a last modified date, use it
-          if (file.lastModifiedDate) {
-            metadata.createdAt = new Date(file.lastModifiedDate);
-            metadata.possibleCreationSources.push('lastModifiedDate');
-          } else {
-            // For fresh photos, use current time
-            const now = new Date();
-            metadata.createdAt = now;
-            metadata.possibleCreationSources.push('current');
-            
-            // Add a warning instead of an error for recent photos
-            const fiveMinutesAgo = new Date(now.getTime() - 5 * 60000); // 5 minutes buffer
-            if (file.lastModifiedDate && new Date(file.lastModifiedDate) > fiveMinutesAgo) {
-              metadata.validationWarnings.push(
-                'Using current time as photo creation time since no EXIF data was found'
-              );
-            } else {
-              metadata.validationWarnings.push(
-                'Could not verify exact photo creation time, but proceeding since photo source is valid'
-              );
-            }
-          }
-        }
-
-        // Extract additional EXIF information
+        // Extract additional EXIF information if available
         if (tags.Make) metadata.cameraMake = tags.Make.description;
         if (tags.Model) metadata.cameraModel = tags.Model.description;
         if (tags.ISO) metadata.iso = tags.ISO.description;
-
       } catch (e) {
-        // If we can't read EXIF but file is recent, allow it
-        const now = new Date();
-        const fiveMinutesAgo = new Date(now.getTime() - 5 * 60000); // 5 minutes buffer
-
-        if (file.lastModifiedDate && new Date(file.lastModifiedDate) > fiveMinutesAgo) {
-          metadata.createdAt = new Date(file.lastModifiedDate);
-          metadata.possibleCreationSources.push('lastModifiedDate');
-          metadata.validationWarnings.push(
-            'No EXIF data found, but allowing upload since photo appears to be recent'
-          );
-        } else {
-          metadata.validationErrors.push(
-            'Unable to verify image source. Please ensure you are uploading a photo directly from your phone camera or Snapchat'
-          );
-        }
+        metadata.validationWarnings.push('No EXIF data found');
       }
     }
 
-    // If the image was compressed, add a warning
-    if (wasCompressed) {
-      metadata.validationWarnings.push(
-        `Image was automatically compressed from ${metadata.originalSizeInMB.toFixed(2)}MB to ${metadata.sizeInMB.toFixed(2)}MB`
-      );
+    // Try file system dates if EXIF not available
+    if (!metadata.createdAt && file.lastModifiedDate) {
+      metadata.createdAt = new Date(file.lastModifiedDate);
+      metadata.possibleCreationSources.push('lastModifiedDate');
+    }
+
+    // Last resort: use current time
+    if (!metadata.createdAt) {
+      metadata.createdAt = new Date();
+      metadata.possibleCreationSources.push('current');
+      
+      if (config.requireOriginalPhoto) {
+        metadata.validationErrors.push(
+          'Could not verify original photo creation time. Please upload original photos directly from your camera/phone.'
+        );
+      } else {
+        metadata.validationWarnings.push(
+          'Using current time as creation time - this may not reflect when the photo was actually taken'
+        );
+      }
     }
 
     return metadata;
@@ -283,22 +131,7 @@ const extractFileMetadata = async (file, config = DEFAULT_VALIDATION_CONFIG) => 
   }
 };
 
-
 const validateFileCreationTime = (fileMetadata, eventStart, eventEnd, config = DEFAULT_VALIDATION_CONFIG) => {
-  if (!fileMetadata.isOriginalPhoto) {
-    return {
-      isValid: false,
-      createdAt: fileMetadata.createdAt,
-      details: {
-        fileCreatedAt: fileMetadata.createdAt.toISOString(),
-        eventStart: eventStart.toISOString(),
-        eventEnd: eventEnd.toISOString(),
-        creationSource: fileMetadata.possibleCreationSources[0],
-        message: 'Image must be an original photo from Snapchat or phone camera'
-      }
-    };
-  }
-
   const createdAt = fileMetadata.createdAt;
   const creationSource = fileMetadata.possibleCreationSources[0];
   
@@ -307,7 +140,7 @@ const validateFileCreationTime = (fileMetadata, eventStart, eventEnd, config = D
 
   const isValid = createdAt >= bufferedEventStart && createdAt <= bufferedEventEnd;
 
-  // Calculate time offset if invalid
+  // Calculate how far outside the event time the photo was taken (if invalid)
   let timeOffset = null;
   if (!isValid) {
     if (createdAt < bufferedEventStart) {
@@ -325,7 +158,6 @@ const validateFileCreationTime = (fileMetadata, eventStart, eventEnd, config = D
       eventStart: eventStart.toISOString(),
       eventEnd: eventEnd.toISOString(),
       creationSource,
-      sourceApplication: fileMetadata.sourceApplication,
       timeOffset,
       message: isValid 
         ? `File creation time is valid (detected via ${creationSource})`

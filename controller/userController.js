@@ -1,6 +1,5 @@
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
-const cloudinary = require('../config/cloudinary')
 const userModel = require('../models/userModel')
 
 exports.signUp = async(req, res)=>{
@@ -23,32 +22,16 @@ exports.signUp = async(req, res)=>{
         }
         const salt = await bcrypt.genSalt(10)
         const hash = await bcrypt.hash(password, salt)
-        const file = req.file;
-        if (!file) {
-          return res.status(400).json({
-            message: "profile picture is required",
-          });
-        }
-    
-        const image = await cloudinary.uploader.upload(req.file.path);
+        
         const data = new userModel({
             fullName,
             email: email.toLowerCase().trim(),
             password: hash,
-            picture: image.secure_url
         })
-
-        fs.unlink(file.path, (error) => {
-            if (error) {
-              console.error("Error deleting the file from local storage:", error);
-            } else {
-              console.log("File deleted from local storage");
-            }
-          });
 
           const userToken = jwt.sign(
             { id: data._id, email: data.email },
-            process.env.JWT_SECRET,
+            process.env.jwt_secret,
             { expiresIn: "1d" }
           );
         await data.save()

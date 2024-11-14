@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken')
-const userModel = require('../model/userModel.js')
+const userModel = require('../models/userModel.js')
 
 const userAuth = async (req, res, next) => {
     try {

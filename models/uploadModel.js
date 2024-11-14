@@ -19,7 +19,7 @@ const UploadSchema = new mongoose.Schema({
     enum: ['image', 'video'],
     required: true
   },
-  fileUrl: {
+  image_id: {
     type: String,
     required: true
   },

@@ -6,7 +6,7 @@ const {validateEventTimes} = require('../utils/functions')
   exports.createEvent = async(req,res) => {
     try {
 
-      const {name,description,startDate, endDate, startTime,endTime} = req.body
+      const {name,description,startDate, folderName, endDate, startTime,endTime} = req.body
 
       const validateDateInputs = await validateEventTimes(startDate, endDate, startTime, endTime)
       if (!validateDateInputs.isValid) {
@@ -28,6 +28,7 @@ const {validateEventTimes} = require('../utils/functions')
       // Create event with additional metadata
       const event = new Event({
         name,
+        folderName,
         description,
         startDate,
         endDate,

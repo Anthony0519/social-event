@@ -10,7 +10,7 @@ exports.uploadFile = async(req,res)=>{
             token: validatedEvent.accessToken,
             fileName: file.originalname,
             fileType: file.type,
-            fileUrl:file.cloudId,
+            image_id:file.cloudId,
             fileSize: file.size,
             uploadedBy: file.name
         })
@@ -40,7 +40,7 @@ exports.getAllUploads = async(req,res)=>{
         const skip = (page - 1) * limit
 
         const images = await uploadModel.find({token: eventId}).skip(skip).limit(limit)
-        if(images || images.length === 0){
+        if(!images || images.length === 0){
             return res.status(404).json({
                 message: "No images uploaded yet!!"
             })
@@ -48,7 +48,7 @@ exports.getAllUploads = async(req,res)=>{
 
         const imagesWithUrl = images.map(image => ({
             ...image.toObject(),
-            url: cloudinary.url(image.url)
+            image_url: cloudinary.url(image.image_id)
         }))
 
         const countPages = await uploadModel.countDocuments({token: eventId})
