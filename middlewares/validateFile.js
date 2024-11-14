@@ -105,7 +105,7 @@ const validateFileUpload = async (req, res, next) => {
     } else {
       res.status(400).json({
         message: 'No files were successfully validated',
-        error: failedFiles.errors
+        failedFiles
       });
     }
   } catch (error) {
