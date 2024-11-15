@@ -8,7 +8,7 @@ const db=require("./config/dbConfig")
 const app=express()
 const port=process.env.port
 app.use(express.json())
-
+app.use(cors("*"));
 app.use(fileUpload({
     limits: { fileSize: 50 * 1024 * 1024 }, // Example: 50MB limit
     createParentPath: true,
@@ -17,7 +17,7 @@ app.use(fileUpload({
 
 app.use("/api", router)
   
-app.use(cors());
+
 
 app.get("/",(req,res)=>{
     res.send("welcome")

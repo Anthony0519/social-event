@@ -1,7 +1,7 @@
 const express = require('express')
 const { signUp, login } = require('../controller/userController')
 const { createEvent } = require('../controller/eventController')
-const { uploadFile, getAllUploads } = require('../controller/uploadController')
+const { uploadFile, getAllUploads, deleteImage } = require('../controller/uploadController')
 
 // const upload = require('../utils/multer')
 const validateFileUpload = require('../middlewares/validateFile')
@@ -17,5 +17,6 @@ router.post('/event/create-event', userAuth, createEvent)
 router.post('/upload/:accessToken', validateFileUpload, uploadFile)
 
 router.get('/event/:accessToken/images', getAllUploads)
+router.delete('/event/delete/:id', deleteImage)
 
 module.exports = router
