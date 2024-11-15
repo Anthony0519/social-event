@@ -66,7 +66,7 @@ try {
         userId: existingUser._id,
         email: existingUser.email
     },
-    process.env.JWT_SECRET,
+    process.env.jwt_secret,
       { expiresIn: "1d" }
 )
 
